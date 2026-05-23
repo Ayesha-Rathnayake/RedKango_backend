@@ -158,7 +158,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiMessage> handleGeneric(Exception ex) {
-        // Log ex here in production (slf4j / log.error)
+        ex.printStackTrace();
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(new ApiMessage("An unexpected error occurred. Please try again."));
     }

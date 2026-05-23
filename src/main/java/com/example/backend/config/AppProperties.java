@@ -1,33 +1,34 @@
-
-
-
 package com.example.backend.config;
 
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 
-@Data
+@Getter
+@Setter
 @Component
 @ConfigurationProperties(prefix = "app")
 public class AppProperties {
+
+    // ── Top-level URL fields (used directly by EmailService) ──────────────────
+    // These map to: app.frontendBaseUrl and app.backendBaseUrl
     private String frontendBaseUrl;
-    private String backendBaseUrl;        // NEW
-    private EmailLinks emailLinks = new EmailLinks(); // NEW
-    private Jwt jwt = new Jwt();
-    private Password password = new Password();
-    private Verification verification = new Verification();
-    private Reset reset = new Reset();
-    private Cors cors = new Cors();
+    private String backendBaseUrl;
 
-    @Data
-    public static class EmailLinks {
-        private boolean frontendEnabled = false; // choose frontend vs backend links in emails
-    }
+    // ── Nested config blocks ───────────────────────────────────────────────────
+    private final Jwt jwt                = new Jwt();
+    private final Verification verification = new Verification();
+    private final Reset reset            = new Reset();
+    private final Password password      = new Password();
+    private final Admin admin            = new Admin();
+    private final Cors cors              = new Cors();
+    private final EmailLinks emailLinks  = new EmailLinks();
 
-    @Data
+    // ── JWT ───────────────────────────────────────────────────────────────────
+    @Getter @Setter
     public static class Jwt {
         private String secret;
         private int accessTokenTtlMinutes;
@@ -35,7 +36,20 @@ public class AppProperties {
         private int refreshTokenTtlDaysRememberMe;
     }
 
-    @Data
+    // ── Verification token ────────────────────────────────────────────────────
+    @Getter @Setter
+    public static class Verification {
+        private int ttlMinutes;
+    }
+
+    // ── Password reset token ──────────────────────────────────────────────────
+    @Getter @Setter
+    public static class Reset {
+        private int ttlMinutes;
+    }
+
+    // ── Password policy ───────────────────────────────────────────────────────
+    @Getter @Setter
     public static class Password {
         private int minLength;
         private int minUppercase;
@@ -44,12 +58,31 @@ public class AppProperties {
         private int minSpecial;
     }
 
-    @Data
-    public static class Verification { private int ttlMinutes; }
+    // ── Admin seed account ────────────────────────────────────────────────────
+    // Maps to: app.admin.email, app.admin.password, etc.
+    // In production override with env vars: APP_ADMIN_EMAIL, APP_ADMIN_PASSWORD
+    @Getter @Setter
+    public static class Admin {
+        private String firstName = "Admin";
+        private String lastName  = "RedKango";
+        private String email;
+        private String password;
+        private String phone     = "0000000000";
+    }
 
-    @Data
-    public static class Reset { private int ttlMinutes; }
+    // ── CORS ──────────────────────────────────────────────────────────────────
+    // Maps to: app.cors.allowedOrigins
+    // Used by CorsConfig: props.getCors().getAllowedOrigins()
+    @Getter @Setter
+    public static class Cors {
+        private List<String> allowedOrigins;
+    }
 
-    @Data
-    public static class Cors { private List<String> allowedOrigins; }
+    // ── Email link strategy ───────────────────────────────────────────────────
+    // Maps to: app.emailLinks.frontendEnabled
+    // Used by EmailService: props.getEmailLinks().isFrontendEnabled()
+    @Getter @Setter
+    public static class EmailLinks {
+        private boolean frontendEnabled = true;
+    }
 }

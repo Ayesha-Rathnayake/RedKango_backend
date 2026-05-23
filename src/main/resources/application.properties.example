@@ -1,0 +1,4 @@
+spring.datasource.password=your_db_password_here
+spring.mail.password=your_gmail_app_password_here
+app.jwt.secret=your_secret_key_min_32_chars_here
+app.admin.password=your_admin_password_here

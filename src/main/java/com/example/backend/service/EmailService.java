@@ -22,12 +22,27 @@ public class EmailService {
 
     @Async
     public void sendVerificationEmail(String to, String token) {
-        SimpleMailMessage msg = new SimpleMailMessage();
-        msg.setTo(to);
-        msg.setSubject("Verify your email");
-        msg.setText("Click the link below to verify your account:\n\n" + buildVerifyLink(token)
-                + "\n\nThis link expires in " + props.getVerification().getTtlMinutes() + " minutes.");
-        mail.send(msg);
+
+        try {
+
+            SimpleMailMessage msg = new SimpleMailMessage();
+            msg.setTo(to);
+            msg.setSubject("Verify your email");
+
+            msg.setText(
+                    "Click the link below to verify your account:\n\n"
+                            + buildVerifyLink(token)
+            );
+
+            mail.send(msg);
+
+            System.out.println("EMAIL SENT SUCCESSFULLY TO: " + to);
+
+        } catch (Exception e) {
+
+            System.out.println("EMAIL SENDING FAILED");
+            e.printStackTrace();
+        }
     }
 
     @Async
@@ -41,12 +56,10 @@ public class EmailService {
         mail.send(msg);
     }
 
-       private String buildVerifyLink(String token) {
-        if (props.getEmailLinks().isFrontendEnabled()) {
-            return props.getFrontendBaseUrl() + "/login?verifyToken=" + token;
-        } else {
-            return props.getBackendBaseUrl() + "/api/auth/verify?token=" + token;
-        }
+    private String buildVerifyLink(String token) {
+        return props.getBackendBaseUrl()
+                + "/api/auth/verify?token="
+                + token;
     }
 
 
