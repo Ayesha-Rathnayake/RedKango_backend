@@ -18,3 +18,10 @@ src/main/resources/application.properties
 # ── OS ────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+
+# ── Sensitive config — NEVER commit ───────────────────────
+.env
+src/main/resources/application.properties
+
+# ── Uploaded files — NEVER commit ─────────────────────────
+uploads/

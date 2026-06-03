@@ -6,6 +6,7 @@ public class ProfileDto {
     private String lastName;
     private String email;
     private String phone;
+    private String profileImageUrl;
 
     // Getters & Setters
     public String getFirstName() { return firstName; }
@@ -19,4 +20,12 @@ public class ProfileDto {
 
     public String getPhone() { return phone; }
     public void setPhone(String phone) { this.phone = phone; }
+
+    public String getProfileImageUrl() {
+        return profileImageUrl;
+    }
+
+    public void setProfileImageUrl(String profileImageUrl) {
+        this.profileImageUrl = profileImageUrl;
+    }
 }

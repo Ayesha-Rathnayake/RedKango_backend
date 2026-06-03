@@ -16,4 +16,6 @@ public interface UserRepository extends JpaRepository<User, Long> {
     long countByRolesContainingAndDeletedFalse(Role role);
 
     long countByRolesContainingAndEnabledAndDeletedFalse(Role role, boolean enabled);
+
+    List<User> findByRolesContaining(Role role);
 }

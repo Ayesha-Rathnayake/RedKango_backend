@@ -11,6 +11,8 @@ public class AdminUserResponse {
     private Instant joined;
     private boolean active;
     private boolean locked;
+    private String status;
+
 
     public AdminUserResponse(
             Long id,
@@ -20,7 +22,8 @@ public class AdminUserResponse {
             String phone,
             Instant joined,
             boolean active,
-            boolean locked
+            boolean locked,
+            String status
     ) {
         this.id = id;
         this.userId = userId;
@@ -30,6 +33,7 @@ public class AdminUserResponse {
         this.joined = joined;
         this.active = active;
         this.locked = locked;
+        this.status = status;
     }
 
     public Long getId() { return id; }
@@ -40,4 +44,5 @@ public class AdminUserResponse {
     public Instant getJoined() { return joined; }
     public boolean isActive() { return active; }
     public boolean isLocked() { return locked; }
+    public String getStatus() { return status; }
 }

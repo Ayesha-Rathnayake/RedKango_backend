@@ -45,7 +45,6 @@ public class SecurityConfig {
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
 
-                        // ── PUBLIC AUTH (POST) ─────────────────────────────
                         .requestMatchers(HttpMethod.POST,
                                 "/api/auth/register",
                                 "/api/auth/login",
@@ -57,19 +56,25 @@ public class SecurityConfig {
                                 "/api/rental/payment/notify"
                         ).permitAll()
 
-                        // ── PUBLIC GET APIs ────────────────────────────────
                         .requestMatchers(HttpMethod.GET,
                                 "/api/auth/verify",
                                 "/api/auth/reset-password",
                                 "/api/rental-items",
                                 "/api/rental-items/categories",
                                 "/api/camping-tips",
+                                "/api/rental-bookings/availability",
                                 "/api/camping-tips/*",
+                                "/api/reviews",
                                 "/api/camping-tips/slug/*",
+                                "/api/terms/active",
+                                "/api/products",
+                                "/api/products/*",
                                 "/uploads/**"
                         ).permitAll()
 
-                        // ── SWAGGER / ERROR / OPTIONS ──────────────────────
+                        .requestMatchers(HttpMethod.POST, "/api/reviews")
+                        .hasAnyRole("CUSTOMER", "ADMIN")
+
                         .requestMatchers("/error").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(
@@ -78,19 +83,16 @@ public class SecurityConfig {
                                 "/swagger-ui/**"
                         ).permitAll()
 
-                        // ── ADMIN APIs (ONLY ONE PLACE) ────────────────────
                         .requestMatchers(HttpMethod.GET, "/uploads/**").permitAll()
+
                         .requestMatchers("/api/admin/**")
                         .hasAuthority("ROLE_ADMIN")
 
-                        // ── CUSTOMER APIs ──────────────────────────────────
                         .requestMatchers("/api/customer/**")
                         .hasAnyRole("CUSTOMER", "ADMIN")
 
-                        // ── CHATBOT ────────────────────────────────────────
                         .requestMatchers("/api/v1/chatbot/**").permitAll()
 
-                        // ── EVERYTHING ELSE ────────────────────────────────
                         .anyRequest().authenticated()
                 )
                 .authenticationProvider(daoAuthProvider())

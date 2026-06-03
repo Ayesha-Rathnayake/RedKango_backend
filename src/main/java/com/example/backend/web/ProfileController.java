@@ -26,6 +26,7 @@ public class ProfileController {
         dto.setLastName(user.getLastName());
         dto.setEmail(user.getEmail());
         dto.setPhone(user.getPhone());
+        dto.setProfileImageUrl(user.getProfileImageUrl());
 
         return ResponseEntity.ok(dto);
     }
@@ -41,9 +42,25 @@ public class ProfileController {
         user.setFirstName(dto.getFirstName());
         user.setLastName(dto.getLastName());
         user.setPhone(dto.getPhone());
+        user.setProfileImageUrl(dto.getProfileImageUrl());
 
         userRepository.save(user);
 
         return ResponseEntity.ok(new ApiMessage("Profile updated successfully"));
+    }
+    @DeleteMapping
+    public ResponseEntity<ApiMessage> deactivateAccount(Authentication authentication) {
+        String email = authentication.getName();
+
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        user.setDeleted(true);
+        user.setEnabled(false);
+        user.setLocked(true);
+
+        userRepository.save(user);
+
+        return ResponseEntity.ok(new ApiMessage("Account deactivated successfully"));
     }
 }

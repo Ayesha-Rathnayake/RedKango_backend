@@ -10,8 +10,12 @@ import com.example.backend.dto.UpdateAdminProfileRequest;
 import com.example.backend.dto.UpdateUserStatusRequest;
 import com.example.backend.repository.RefreshTokenRepository;
 import com.example.backend.repository.UserRepository;
+import com.example.backend.repository.TermsConditionRepository;
+import com.example.backend.domain.TermsCondition;
+import com.example.backend.dto.TermsConditionRequest;
 import jakarta.transaction.Transactional;
 import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -28,15 +32,19 @@ public class AdminController {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final RefreshTokenRepository refreshTokenRepository;
+    private final TermsConditionRepository termsRepository;
 
     public AdminController(
             UserRepository userRepository,
             PasswordEncoder passwordEncoder,
-            RefreshTokenRepository refreshTokenRepository
+            RefreshTokenRepository refreshTokenRepository,
+            TermsConditionRepository termsRepository
+
     ) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.refreshTokenRepository = refreshTokenRepository;
+        this.termsRepository = termsRepository;
     }
 
     // ================= ADMIN PROFILE =================
@@ -92,7 +100,7 @@ public class AdminController {
 
     @GetMapping("/users")
     public List<AdminUserResponse> getUsers() {
-        return userRepository.findByRolesContainingAndDeletedFalse(Role.ROLE_CUSTOMER)
+        return userRepository.findByRolesContaining(Role.ROLE_CUSTOMER)
                 .stream()
                 .map(this::toAdminUserResponse)
                 .toList();
@@ -100,22 +108,35 @@ public class AdminController {
 
     @GetMapping("/users/stats")
     public Map<String, Object> userStats() {
-        long totalUsers = userRepository.countByRolesContainingAndDeletedFalse(Role.ROLE_CUSTOMER);
 
-        long activeUsers =
-                userRepository.countByRolesContainingAndEnabledAndDeletedFalse(
-                        Role.ROLE_CUSTOMER, true
-                );
+        List<User> users =
+                userRepository.findByRolesContaining(Role.ROLE_CUSTOMER);
 
-        long inactiveUsers =
-                userRepository.countByRolesContainingAndEnabledAndDeletedFalse(
-                        Role.ROLE_CUSTOMER, false
-                );
+        long totalUsers = users.size();
+
+        long activeUsers = users.stream()
+                .filter(u ->
+                        !u.isDeleted()
+                                && u.isEnabled()
+                                && !u.isLocked())
+                .count();
+
+        long inactiveUsers = users.stream()
+                .filter(u ->
+                        !u.isDeleted()
+                                && (!u.isEnabled()
+                                || u.isLocked()))
+                .count();
+
+        long deactivatedUsers = users.stream()
+                .filter(User::isDeleted)
+                .count();
 
         return Map.of(
                 "totalUsers", totalUsers,
                 "activeUsers", activeUsers,
-                "inactiveUsers", inactiveUsers
+                "inactiveUsers", inactiveUsers,
+                "deactivatedUsers", deactivatedUsers
         );
     }
 
@@ -154,14 +175,18 @@ public class AdminController {
     public AdminUserResponse restoreUser(@PathVariable Long id) {
         User user = getCustomerUser(id);
 
-        if (user.isDeleted()) {
-            throw new IllegalArgumentException("Deleted users cannot be restored from this action");
+        if (!user.isDeleted()) {
+            throw new IllegalArgumentException(
+                    "User is not deactivated"
+            );
         }
 
+        user.setDeleted(false);
         user.setLocked(false);
         user.setEnabled(true);
 
         User savedUser = userRepository.saveAndFlush(user);
+
         return toAdminUserResponse(savedUser);
     }
 
@@ -205,6 +230,15 @@ public class AdminController {
     }
 
     private AdminUserResponse toAdminUserResponse(User user) {
+        String status;
+
+        if (user.isDeleted()) {
+            status = "Deactivated";
+        } else if (!user.isEnabled() || user.isLocked()) {
+            status = "Inactive";
+        } else {
+            status = "Active";
+        }
         return new AdminUserResponse(
                 user.getId(),
                 "U" + String.format("%03d", user.getId()),
@@ -213,7 +247,85 @@ public class AdminController {
                 user.getPhone(),
                 user.getCreatedAt(),
                 user.isEnabled(),
-                user.isLocked()
+                user.isLocked(),
+                status
         );
+    }
+    // ================= TERMS & CONDITIONS =================
+
+    @GetMapping("/terms")
+    public List<TermsCondition> getTerms() {
+
+        return termsRepository.findAll()
+                .stream()
+                .sorted((a, b) ->
+                        b.getCreatedAt().compareTo(a.getCreatedAt()))
+                .toList();
+    }
+
+    @PostMapping("/terms")
+    public TermsCondition createTerms(
+            @RequestBody TermsConditionRequest request
+    ) {
+
+        if (request.isActive()) {
+
+            termsRepository.findAll().forEach(t -> {
+                t.setActive(false);
+                termsRepository.save(t);
+            });
+        }
+
+        TermsCondition terms = new TermsCondition();
+
+        terms.setTitle(request.getTitle());
+        terms.setVersion(request.getVersion());
+        terms.setContent(request.getContent());
+        terms.setActive(request.isActive());
+
+        return termsRepository.save(terms);
+    }
+
+    @PutMapping("/terms/{id}")
+    public ResponseEntity<?> updateTerms(
+            @PathVariable Long id,
+            @RequestBody TermsConditionRequest request
+    ) {
+
+        return termsRepository.findById(id)
+                .map(terms -> {
+
+                    if (request.isActive()) {
+
+                        termsRepository.findAll().forEach(t -> {
+                            t.setActive(false);
+                            termsRepository.save(t);
+                        });
+                    }
+
+                    terms.setTitle(request.getTitle());
+                    terms.setVersion(request.getVersion());
+                    terms.setContent(request.getContent());
+                    terms.setActive(request.isActive());
+
+                    return ResponseEntity.ok(
+                            termsRepository.save(terms)
+                    );
+                })
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    @DeleteMapping("/terms/{id}")
+    public ResponseEntity<?> deleteTerms(
+            @PathVariable Long id
+    ) {
+
+        if (!termsRepository.existsById(id)) {
+            return ResponseEntity.notFound().build();
+        }
+
+        termsRepository.deleteById(id);
+
+        return ResponseEntity.ok().build();
     }
 }
