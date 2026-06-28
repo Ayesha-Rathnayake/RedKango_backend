@@ -1,33 +1,27 @@
-HELP.md
+# ── Build output ──────────────────────────────────────────
 target/
-.mvn/wrapper/maven-wrapper.jar
-!**/src/main/**/target/
-!**/src/test/**/target/
+*.class
+*.jar
+*.war
 
-### STS ###
-.apt_generated
-.classpath
-.factorypath
-.project
-.settings
-.springBeans
-.sts4-cache
-
-### IntelliJ IDEA ###
-.idea
-*.iws
+# ── IDE ───────────────────────────────────────────────────
+.idea/
 *.iml
-*.ipr
-
-### NetBeans ###
-/nbproject/private/
-/nbbuild/
-/dist/
-/nbdist/
-/.nb-gradle/
-build/
-!**/src/main/**/build/
-!**/src/test/**/build/
-
-### VS Code ###
 .vscode/
+
+# ── Sensitive config — NEVER commit ───────────────────────
+src/main/resources/application.properties
+
+# application.properties.example is SAFE — commit it
+# application.properties is NOT safe — contains real credentials
+
+# ── OS ────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Sensitive config — NEVER commit ───────────────────────
+.env
+src/main/resources/application.properties
+
+# ── Uploaded files — NEVER commit ─────────────────────────
+uploads/
