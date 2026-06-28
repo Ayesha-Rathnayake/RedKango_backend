@@ -18,6 +18,8 @@ public class RentalBookingDto {
         private List<RentalCartItemRequest> items;
         private DeliveryAddressRequest deliveryAddress;
         private String customerNote;
+        private String deliveryMethod; // "DELIVERY" or "PICKUP"
+
     }
 
     @Getter
@@ -73,6 +75,7 @@ public class RentalBookingDto {
 
         private String bookingStatus;
         private String paymentStatus;
+        private String deliveryMethod;
 
         private String deliveryFullName;
         private String deliveryPhone;

@@ -42,14 +42,6 @@ public class AuthController {
 
     // ─── EMAIL VERIFICATION ───────────────────────────────────────────────────
 
-    /**
-     * Browser hits this URL from the verification email.
-     *
-     * Redirect outcomes:
-     *   /login?verified=true              → success (or already-used idempotent click)
-     *   /login?verifyError=expired&email= → token expired, Angular shows resend form pre-filled
-     *   /login?verifyError=invalid        → token not found
-     */
     @GetMapping("/verify")
     public RedirectView verify(@RequestParam String token) {
         try {
@@ -57,14 +49,12 @@ public class AuthController {
             return new RedirectView(frontendBaseUrl + "/login?verified=true");
 
         } catch (IllegalStateException e) {
-            // "Token already used" — idempotent double-click, treat as success
             return new RedirectView(frontendBaseUrl + "/login?verified=true");
 
         } catch (IllegalArgumentException e) {
             String msg = e.getMessage() != null ? e.getMessage() : "";
 
             if (msg.contains("expired")) {
-                // Pass email back so Angular pre-fills the resend form
                 try {
                     String userEmail = authService.getEmailForToken(token);
                     String encoded   = URLEncoder.encode(userEmail, StandardCharsets.UTF_8);

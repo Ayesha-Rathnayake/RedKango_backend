@@ -27,7 +27,9 @@ public class AuthService {
     private final EmailService            email;
     private final AppProperties           props;
     private final PasswordPolicyService   policy;
-    private final EntityManager           em;          // ← needed to evict stale cache
+    private final EntityManager           em;
+    private final AdminNotificationService adminNotificationService;
+    // ← needed to evict stale cache
 
     public AuthService(UserRepository userRepo,
                        VerificationTokenRepository verifyRepo,
@@ -39,7 +41,9 @@ public class AuthService {
                        EmailService email,
                        AppProperties props,
                        PasswordPolicyService policy,
-                       EntityManager em) {
+                       EntityManager em,
+                       AdminNotificationService adminNotificationService) {
+
         this.userRepo    = userRepo;
         this.verifyRepo  = verifyRepo;
         this.resetRepo   = resetRepo;
@@ -51,6 +55,7 @@ public class AuthService {
         this.props       = props;
         this.policy      = policy;
         this.em          = em;
+        this.adminNotificationService = adminNotificationService;
     }
 
     // ─── REGISTER ────────────────────────────────────────────────────────────
@@ -74,6 +79,12 @@ public class AuthService {
         // saveAndFlush so the user row exists in DB before the FK token row is inserted
         userRepo.saveAndFlush(user);
 
+        adminNotificationService.push(
+                AdminNotification.NotificationType.NEW_USER,
+                "New User: " + user.getFirstName() + " " + user.getLastName() + " | " + user.getEmail()
+        );
+
+
         VerificationToken vt = new VerificationToken();
         vt.setToken(UUID.randomUUID().toString());
         vt.setUser(user);
@@ -86,22 +97,6 @@ public class AuthService {
 
     // ─── VERIFY EMAIL ─────────────────────────────────────────────────────────
 
-    /**
-     * THE FIX explained:
-     *
-     * VerificationToken has @OneToOne(fetch=EAGER) to User.
-     * When Hibernate loads the VerificationToken, it also loads the User
-     * into the first-level (session) cache with enabled=false.
-     *
-     * Later, userRepo.findById(id) returns that SAME cached instance —
-     * still showing enabled=false.  setEnabled(true) marks it dirty,
-     * but a plain save() relies on Hibernate's dirty-check which can
-     * miss this because the snapshot was taken when the object was first
-     * loaded (as part of the token load), not when we called setEnabled.
-     *
-     * Fix: evict the User from the session cache BEFORE re-fetching it,
-     * then call saveAndFlush() to force an immediate UPDATE to the DB.
-     */
     @Transactional
     public void verifyEmail(String token) {
 
@@ -118,24 +113,19 @@ public class AuthService {
             throw new IllegalStateException("Token already used");
         }
 
-        // 1. Mark token used and flush immediately (prevents double-click race)
         vt.setUsed(true);
         verifyRepo.saveAndFlush(vt);
 
-        // 2. Evict the User from Hibernate's first-level cache.
-        //    Without this, findById returns the stale proxy loaded via the
-        //    EAGER @OneToOne — which still has enabled=false in its snapshot,
-        //    so the dirty-check doesn't fire and the UPDATE never runs.
-        Long userId = vt.getUser().getId();
-        em.detach(vt.getUser());  // ← THE KEY FIX: removes stale proxy from session cache
 
-        // 3. Re-fetch user fresh from DB and set enabled=true
+        Long userId = vt.getUser().getId();
+        em.detach(vt.getUser());
+
+
         User user = userRepo.findById(userId)
                 .orElseThrow(() -> new IllegalStateException("User not found"));
 
         user.setEnabled(true);
 
-        // 4. saveAndFlush forces the UPDATE to hit the DB immediately
         userRepo.saveAndFlush(user);
     }
 
@@ -151,7 +141,6 @@ public class AuthService {
             throw new IllegalStateException("Account is already verified");
         }
 
-        // Delete all old tokens for this user before issuing a new one
         verifyRepo.deleteByUser_Id(user.getId());
         em.flush(); // ensure deletes are written before the insert
 
@@ -170,7 +159,6 @@ public class AuthService {
 
     /**
      * Looks up the email even for an expired/used token so the controller
-     * can pass it back to Angular to pre-fill the resend form.
      */
     public String getEmailForToken(String token) {
         return verifyRepo.findByToken(token)
@@ -182,11 +170,6 @@ public class AuthService {
 
     @Transactional
     public AuthResponse login(LoginRequest req) {
-        // Spring Security's DaoAuthenticationProvider checks:
-        //   1. credentials (BadCredentialsException if wrong)
-        //   2. enabled flag (DisabledException if enabled=false)
-        //   3. locked flag  (LockedException if locked=true)
-        // GlobalExceptionHandler maps each to the correct 401 message.
         authManager.authenticate(
                 new UsernamePasswordAuthenticationToken(req.getEmail(), req.getPassword())
         );

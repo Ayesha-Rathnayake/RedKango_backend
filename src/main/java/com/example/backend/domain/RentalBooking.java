@@ -42,6 +42,10 @@ public class RentalBooking {
     @Column(name = "subtotal", nullable = false)
     private BigDecimal subtotal;
 
+    @Column(name = "delivery_method", nullable = false)
+    private String deliveryMethod = "DELIVERY"; // DELIVERY or PICKUP
+
+
     @Column(name = "delivery_charge", nullable = false)
     private BigDecimal deliveryCharge;
 

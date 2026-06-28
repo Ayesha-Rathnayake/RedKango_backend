@@ -63,4 +63,21 @@ public class JwtService {
             return false;
         }
     }
+    @SuppressWarnings("unchecked")
+    public List<String> extractRoles(String token) {
+        Claims claims = Jwts.parserBuilder()
+                .setSigningKey(key)
+                .build()
+                .parseClaimsJws(token)
+                .getBody();
+
+        Object rolesObj = claims.get("roles");
+        if (rolesObj instanceof List<?> rolesList) {
+            return rolesList.stream()
+                    .filter(r -> r instanceof String)
+                    .map(r -> (String) r)
+                    .toList();
+        }
+        return List.of();
+    }
 }

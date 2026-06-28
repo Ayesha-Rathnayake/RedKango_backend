@@ -11,15 +11,6 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
 import java.util.Set;
-
-/**
- * Runs once on every application startup.
- *
- * - Creates the default admin account if it doesn't already exist.
- * - Safe to run repeatedly — it checks before inserting.
- * - Credentials are read from application.properties (or environment variables),
- *   never hardcoded here.
- */
 @Component
 public class DataSeeder implements ApplicationRunner {
 

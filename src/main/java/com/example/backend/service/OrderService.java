@@ -24,6 +24,7 @@ public class OrderService {
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
     private final EmailService emailService;
+    private final AdminNotificationService adminNotificationService;
 
     private static final BigDecimal DELIVERY_CHARGE = BigDecimal.valueOf(1000);
 
@@ -98,6 +99,7 @@ public class OrderService {
         order.setPaymentMethod("CARD");
 
         CustomerOrder savedOrder = orderRepository.save(order);
+
 
         OrderDto.CreateOrderResponse response = new OrderDto.CreateOrderResponse();
         response.setOrderId(savedOrder.getId());

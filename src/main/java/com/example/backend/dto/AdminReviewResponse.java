@@ -4,7 +4,7 @@ import java.time.Instant;
 
 public class AdminReviewResponse {
     private Long id;
-    private String customer;
+    private String name;
     private String service;
     private String targetType;
     private String productName;
@@ -15,7 +15,7 @@ public class AdminReviewResponse {
 
     public AdminReviewResponse(
             Long id,
-            String customer,
+            String name,
             String service,
             String targetType,
             String productName,
@@ -25,7 +25,7 @@ public class AdminReviewResponse {
             Instant date
     ) {
         this.id = id;
-        this.customer = customer;
+        this.name = name;
         this.service = service;
         this.targetType = targetType;
         this.productName = productName;
@@ -36,7 +36,7 @@ public class AdminReviewResponse {
     }
 
     public Long getId() { return id; }
-    public String getCustomer() { return customer; }
+    public String getName() { return name; }
     public String getService() { return service; }
     public String getTargetType() { return targetType; }
     public String getProductName() { return productName; }

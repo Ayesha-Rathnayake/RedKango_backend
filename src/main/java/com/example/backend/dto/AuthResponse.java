@@ -20,6 +20,5 @@ public class AuthResponse {
     private String email;
     private String fullName;
 
-    /** e.g. ["ROLE_CUSTOMER"] or ["ROLE_ADMIN"] */
     private List<String> roles;
 }

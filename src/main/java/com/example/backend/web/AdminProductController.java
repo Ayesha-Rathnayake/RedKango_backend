@@ -179,7 +179,7 @@ public class AdminProductController {
                 product.getUpdatedAt()
         );
     }
-//STOKC PERCENTAGE
+//STOCK PERCENTAGE
     private double getStockPercentage(Product product) {
         if (product.getTotalUnits() == null || product.getTotalUnits() == 0) {
             return 0;

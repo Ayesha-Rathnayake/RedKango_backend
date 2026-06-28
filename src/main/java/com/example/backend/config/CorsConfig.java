@@ -24,10 +24,10 @@ public class CorsConfig {
         cfg.setAllowedOrigins(props.getCors().getAllowedOrigins());
         cfg.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
 
-        // IMPORTANT: allow custom headers like X-Refresh-Attempt used by your interceptor
+        // Allow custom headers like X-Refresh-Attempt used by interceptor
         cfg.addAllowedHeader(CorsConfiguration.ALL);
 
-        // You’re using Authorization header (not cookies), so no credentials needed
+        // using Authorization header (not cookies), so no credentials needed
         cfg.setAllowCredentials(false);
 
         cfg.setMaxAge(3600L);

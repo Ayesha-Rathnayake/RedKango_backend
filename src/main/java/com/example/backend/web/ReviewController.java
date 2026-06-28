@@ -1,5 +1,6 @@
-package com.example.backend.controller;
+package com.example.backend.web;
 
+import com.example.backend.domain.AdminNotification;
 import com.example.backend.domain.Review;
 import com.example.backend.domain.ReviewTargetType;
 import com.example.backend.domain.User;
@@ -7,6 +8,7 @@ import com.example.backend.dto.CreateReviewRequest;
 import com.example.backend.dto.ReviewResponse;
 import com.example.backend.repository.ReviewRepository;
 import com.example.backend.repository.UserRepository;
+import com.example.backend.service.AdminNotificationService;
 import jakarta.validation.Valid;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -21,13 +23,18 @@ public class ReviewController {
     private final ReviewRepository reviewRepository;
     private final UserRepository userRepository;
 
+    private final AdminNotificationService adminNotificationService;
+
     public ReviewController(
             ReviewRepository reviewRepository,
-            UserRepository userRepository
+            UserRepository userRepository,
+            AdminNotificationService adminNotificationService
     ) {
         this.reviewRepository = reviewRepository;
         this.userRepository = userRepository;
+        this.adminNotificationService = adminNotificationService;
     }
+
 
     @GetMapping
     public List<ReviewResponse> getPublicReviews() {
@@ -61,7 +68,13 @@ public class ReviewController {
 
         Review savedReview = reviewRepository.save(review);
 
+        adminNotificationService.push(
+                AdminNotification.NotificationType.NEW_REVIEW,
+                "New Review: " + savedReview.getRating() + "/5 ★ | " + user.getFirstName() + " " + user.getLastName() + " | " + savedReview.getService()
+        );
+
         return toResponse(savedReview, false);
+
     }
 
     private ReviewResponse toResponse(Review review, boolean includeEmail) {

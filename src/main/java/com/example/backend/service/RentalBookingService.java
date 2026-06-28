@@ -28,6 +28,9 @@ public class RentalBookingService {
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
     private final EmailService emailService;
+    private final AdminNotificationService adminNotificationService;
+
+
 
     private static final BigDecimal DELIVERY_CHARGE = BigDecimal.valueOf(1000);
 
@@ -60,14 +63,22 @@ public class RentalBookingService {
         booking.setTotalDays(totalDays);
         booking.setCustomerNote(request.getCustomerNote());
 
-        var address = request.getDeliveryAddress();
-        booking.setDeliveryFullName(address.getFullName());
-        booking.setDeliveryPhone(address.getPhone());
-        booking.setDeliveryAddressLine1(address.getAddressLine1());
-        booking.setDeliveryAddressLine2(address.getAddressLine2());
-        booking.setDeliveryCity(address.getCity());
-        booking.setDeliveryDistrict(address.getDistrict());
-        booking.setDeliveryPostalCode(address.getPostalCode());
+        String deliveryMethod = request.getDeliveryMethod() != null
+                ? request.getDeliveryMethod()
+                : "DELIVERY";
+
+        booking.setDeliveryMethod(deliveryMethod);
+
+        if ("DELIVERY".equals(deliveryMethod) && request.getDeliveryAddress() != null) {
+            var address = request.getDeliveryAddress();
+            booking.setDeliveryFullName(address.getFullName());
+            booking.setDeliveryPhone(address.getPhone());
+            booking.setDeliveryAddressLine1(address.getAddressLine1());
+            booking.setDeliveryAddressLine2(address.getAddressLine2());
+            booking.setDeliveryCity(address.getCity());
+            booking.setDeliveryDistrict(address.getDistrict());
+            booking.setDeliveryPostalCode(address.getPostalCode());
+        }
 
         BigDecimal subtotal = BigDecimal.ZERO;
 
@@ -117,15 +128,21 @@ public class RentalBookingService {
             subtotal = subtotal.add(lineTotal);
         }
 
-        BigDecimal totalAmount = subtotal.add(DELIVERY_CHARGE);
-        BigDecimal advanceAmount = totalAmount
+        BigDecimal actualDeliveryCharge = "PICKUP".equals(deliveryMethod)
+                ? BigDecimal.ZERO
+                : DELIVERY_CHARGE;
+
+        BigDecimal totalAmount = subtotal.add(actualDeliveryCharge);
+        BigDecimal advanceAmount = subtotal
                 .multiply(BigDecimal.valueOf(0.5))
                 .setScale(2, RoundingMode.HALF_UP);
-        BigDecimal remainingAmount = totalAmount.subtract(advanceAmount);
+        BigDecimal remainingAmount = subtotal.subtract(advanceAmount).add(actualDeliveryCharge);
+
 
         booking.setSubtotal(subtotal);
-        booking.setDeliveryCharge(DELIVERY_CHARGE);
+        booking.setDeliveryCharge(actualDeliveryCharge);
         booking.setTotalAmount(totalAmount);
+
         booking.setAdvanceAmount(advanceAmount);
         booking.setRemainingAmount(remainingAmount);
         booking.setBookingStatus(RentalBookingStatus.PENDING_PAYMENT);
@@ -152,15 +169,13 @@ public class RentalBookingService {
         RentalBooking saved = rentalBookingRepository.save(booking);
 
         User user = saved.getUser();
-        emailService.sendRentalBookingConfirmedEmail(
-                user.getEmail(),
-                user.getFirstName() + " " + user.getLastName(),
-                saved.getBookingNumber(),
-                saved.getRentalStartDate().toString(),
-                saved.getRentalEndDate().toString(),
-                saved.getAdvanceAmount().toPlainString(),
-                saved.getRemainingAmount().toPlainString()
-        );
+
+        // Force-load lazy collections before passing to async email
+        saved.getItems().size();
+        saved.getUser().getEmail();
+
+        emailService.sendRentalInvoiceEmail(user.getEmail(), saved);
+
 
         return toResponse(saved);
     }
@@ -264,20 +279,56 @@ public class RentalBookingService {
 
         return toResponse(saved);
     }
-
     @Transactional
     public RentalBookingDto.RentalBookingResponse markAsRented(Long bookingId) {
         RentalBooking booking = rentalBookingRepository.findById(bookingId)
                 .orElseThrow(() -> new RuntimeException("Rental booking not found"));
 
-        if (booking.getBookingStatus() != RentalBookingStatus.DISPATCHED) {
-            throw new RuntimeException("Only dispatched bookings can be marked as rented");
+        boolean isPickup = "PICKUP".equals(booking.getDeliveryMethod());
+
+        if (isPickup) {
+            // PICKUP bookings go CONFIRMED → RENTED directly (no dispatch step)
+            if (booking.getBookingStatus() != RentalBookingStatus.CONFIRMED &&
+                    booking.getBookingStatus() != RentalBookingStatus.READY_FOR_DISPATCH) {
+                throw new RuntimeException("Booking is not in a valid state to mark as collected");
+            }
+        } else {
+            // DELIVERY bookings must go through DISPATCHED first
+            if (booking.getBookingStatus() != RentalBookingStatus.DISPATCHED) {
+                throw new RuntimeException("Only dispatched bookings can be marked as rented");
+            }
         }
 
         booking.setBookingStatus(RentalBookingStatus.RENTED);
 
-        return toResponse(rentalBookingRepository.save(booking));
+        RentalBooking saved = rentalBookingRepository.save(booking);
+
+        // Decrement availableUnits for each rented product
+        for (RentalBookingItem item : saved.getItems()) {
+            productRepository.findById(item.getProductDbId()).ifPresent(product -> {
+                int updated = Math.max(product.getAvailableUnits() - item.getQuantity(), 0);
+                product.setAvailableUnits(updated);
+                productRepository.save(product);
+            });
+        }
+
+
+        // For PICKUP bookings, notify the customer their rental has started
+        if ("PICKUP".equals(saved.getDeliveryMethod())) {
+            User user = saved.getUser();
+            emailService.sendRentalPickupConfirmedEmail(
+                    user.getEmail(),
+                    user.getFirstName() + " " + user.getLastName(),
+                    saved.getBookingNumber(),
+                    saved.getRentalStartDate().toString(),
+                    saved.getRentalEndDate().toString()
+            );
+        }
+
+        return toResponse(saved);
+
     }
+
 
     @Transactional
     public RentalBookingDto.RentalBookingResponse markAsReturned(Long bookingId) {
@@ -291,7 +342,32 @@ public class RentalBookingService {
         booking.setBookingStatus(RentalBookingStatus.RETURNED);
         booking.setReturnedAt(Instant.now());
 
-        return toResponse(rentalBookingRepository.save(booking));
+        RentalBooking saved = rentalBookingRepository.save(booking);
+
+        // Restore availableUnits for each returned product
+        for (RentalBookingItem item : saved.getItems()) {
+            productRepository.findById(item.getProductDbId()).ifPresent(product -> {
+                int restored = Math.min(
+                        product.getAvailableUnits() + item.getQuantity(),
+                        product.getTotalUnits()
+                );
+                product.setAvailableUnits(restored);
+                productRepository.save(product);
+            });
+        }
+
+
+        User user = saved.getUser();
+        emailService.sendRentalReturnedEmail(
+                user.getEmail(),
+                user.getFirstName() + " " + user.getLastName(),
+                saved.getBookingNumber(),
+                saved.getPaymentStatus().name(),
+                saved.getRemainingAmount().toPlainString()
+        );
+
+        return toResponse(saved);
+
     }
 
     @Transactional
@@ -303,11 +379,27 @@ public class RentalBookingService {
             throw new RuntimeException("Only returned bookings can be completed");
         }
 
+        if (booking.getPaymentStatus() != RentalPaymentStatus.FULLY_PAID) {
+            throw new RuntimeException("Cannot complete booking before balance is collected");
+        }
+
+
         booking.setBookingStatus(RentalBookingStatus.COMPLETED);
         booking.setCompletedAt(Instant.now());
 
-        return toResponse(rentalBookingRepository.save(booking));
+        RentalBooking saved = rentalBookingRepository.save(booking);
+
+        User user = saved.getUser();
+        emailService.sendRentalCompletedEmail(
+                user.getEmail(),
+                user.getFirstName() + " " + user.getLastName(),
+                saved.getBookingNumber()
+        );
+
+        return toResponse(saved);
     }
+
+
 
     @Transactional
     public RentalBookingDto.RentalBookingResponse cancelBooking(Long bookingId) {
@@ -330,7 +422,22 @@ public class RentalBookingService {
         booking.setBookingStatus(RentalBookingStatus.CANCELLED);
         booking.setPaymentStatus(RentalPaymentStatus.CANCELLED);
 
-        return toResponse(rentalBookingRepository.save(booking));
+        RentalBooking saved = rentalBookingRepository.save(booking);
+        adminNotificationService.push(
+                AdminNotification.NotificationType.BOOKING_CANCELLED,
+                "Booking Cancelled: " + saved.getBookingNumber() + " | " + user.getFirstName() + " " + user.getLastName()
+        );
+
+        User bookedUser = saved.getUser();
+        emailService.sendRentalCancelledEmail(
+                bookedUser.getEmail(),
+                bookedUser.getFirstName() + " " + bookedUser.getLastName(),
+                saved.getBookingNumber(),
+                saved.getAdvanceAmount().compareTo(java.math.BigDecimal.ZERO) > 0
+        );
+
+        return toResponse(saved);
+
     }
 
     private void validateRequest(RentalBookingDto.CreateRentalBookingRequest request) {
@@ -338,8 +445,10 @@ public class RentalBookingService {
             throw new RuntimeException("Rental cart is empty");
         }
 
-        if (request.getDeliveryAddress() == null) {
-            throw new RuntimeException("Delivery address is required");
+        boolean isDelivery = !"PICKUP".equals(request.getDeliveryMethod());
+
+        if (isDelivery && request.getDeliveryAddress() == null) {
+            throw new RuntimeException("Delivery address is required for delivery orders");
         }
 
         validateDates(request.getRentalStartDate(), request.getRentalEndDate());
@@ -428,6 +537,8 @@ public class RentalBookingService {
 
         response.setBookingStatus(booking.getBookingStatus().name());
         response.setPaymentStatus(booking.getPaymentStatus().name());
+        response.setDeliveryMethod(booking.getDeliveryMethod());
+
 
         response.setDeliveryFullName(booking.getDeliveryFullName());
         response.setDeliveryPhone(booking.getDeliveryPhone());
@@ -468,4 +579,25 @@ public class RentalBookingService {
 
         return response;
     }
+
+    @Transactional
+    public RentalBookingDto.RentalBookingResponse markBalanceCollected(Long bookingId) {
+        RentalBooking booking = rentalBookingRepository.findById(bookingId)
+                .orElseThrow(() -> new RuntimeException("Rental booking not found"));
+
+        if (booking.getBookingStatus() != RentalBookingStatus.RETURNED &&
+                booking.getBookingStatus() != RentalBookingStatus.RENTED) {
+            throw new RuntimeException("Balance can only be collected when gear is rented or returned");
+        }
+
+
+        if (booking.getPaymentStatus() != RentalPaymentStatus.ADVANCE_PAID) {
+            throw new RuntimeException("Balance already collected or booking not eligible");
+        }
+
+        booking.setPaymentStatus(RentalPaymentStatus.FULLY_PAID);
+
+        return toResponse(rentalBookingRepository.save(booking));
+    }
+
 }

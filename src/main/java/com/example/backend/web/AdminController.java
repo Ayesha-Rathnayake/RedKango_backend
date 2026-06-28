@@ -13,6 +13,7 @@ import com.example.backend.repository.UserRepository;
 import com.example.backend.repository.TermsConditionRepository;
 import com.example.backend.domain.TermsCondition;
 import com.example.backend.dto.TermsConditionRequest;
+import com.example.backend.service.EmailService;
 import jakarta.transaction.Transactional;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
@@ -33,18 +34,24 @@ public class AdminController {
     private final PasswordEncoder passwordEncoder;
     private final RefreshTokenRepository refreshTokenRepository;
     private final TermsConditionRepository termsRepository;
+    private final EmailService emailService;
+
 
     public AdminController(
             UserRepository userRepository,
             PasswordEncoder passwordEncoder,
             RefreshTokenRepository refreshTokenRepository,
-            TermsConditionRepository termsRepository
+            TermsConditionRepository termsRepository,
+            EmailService emailService
+
 
     ) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.refreshTokenRepository = refreshTokenRepository;
         this.termsRepository = termsRepository;
+        this.emailService = emailService;
+
     }
 
     // ================= ADMIN PROFILE =================
@@ -155,11 +162,28 @@ public class AdminController {
         user.setLocked(!request.isEnabled());
 
         User savedUser = userRepository.saveAndFlush(user);
+
+        // Send email notification if being deactivated (made inactive)
+        if (!request.isEnabled()) {
+            String reason = request.getReason() != null ? request.getReason() : "Account suspended";
+            String notes = request.getNotes();
+            emailService.sendAccountSuspendedEmail(
+                    savedUser.getEmail(),
+                    savedUser.getFirstName() + " " + savedUser.getLastName(),
+                    reason,
+                    notes
+            );
+        }
+
         return toAdminUserResponse(savedUser);
     }
 
+
     @DeleteMapping("/users/{id}")
-    public Map<String, String> deleteUser(@PathVariable Long id) {
+    public Map<String, String> deleteUser(
+            @PathVariable Long id,
+            @RequestBody(required = false) UpdateUserStatusRequest request
+    ) {
         User user = getCustomerUser(id);
 
         user.setDeleted(true);
@@ -167,6 +191,18 @@ public class AdminController {
         user.setLocked(true);
 
         userRepository.saveAndFlush(user);
+
+        String reason = (request != null && request.getReason() != null)
+                ? request.getReason()
+                : "Policy violation";
+        String notes = (request != null) ? request.getNotes() : null;
+
+        emailService.sendAccountDeactivatedEmail(
+                user.getEmail(),
+                user.getFirstName() + " " + user.getLastName(),
+                reason,
+                notes
+        );
 
         return Map.of("message", "User deleted successfully");
     }

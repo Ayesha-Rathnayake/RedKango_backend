@@ -2,14 +2,10 @@ package com.example.backend.service;
 
 import com.example.backend.config.AppProperties;
 import com.example.backend.config.PayHereProperties;
-import com.example.backend.domain.CustomerOrder;
-import com.example.backend.domain.OrderStatus;
-import com.example.backend.domain.PaymentStatus;
-import com.example.backend.domain.RentalBooking;
-import com.example.backend.domain.RentalBookingStatus;
-import com.example.backend.domain.RentalPaymentStatus;
+import com.example.backend.domain.*;
 import com.example.backend.dto.PaymentDto;
 import com.example.backend.repository.CustomerOrderRepository;
+import com.example.backend.repository.ProductRepository;
 import com.example.backend.repository.RentalBookingRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -30,6 +26,11 @@ public class PaymentService {
     private final RentalBookingRepository rentalBookingRepository;
     private final PayHereProperties payHereProperties;
     private final AppProperties appProperties;
+    private final ProductRepository productRepository;
+    private final EmailService emailService;
+    private final AdminNotificationService adminNotificationService;
+
+
 
     @Transactional(readOnly = true)
     public PaymentDto.PayHereInitResponse createPayHerePayment(Long orderId) {
@@ -60,7 +61,7 @@ public class PaymentService {
 
         response.setCheckoutUrl(payHereProperties.getCheckoutUrl());
         response.setMerchantId(payHereProperties.getMerchantId());
-        response.setReturnUrl(appProperties.getFrontendBaseUrl() + "/payment/success?orderId=" + order.getId());
+        response.setReturnUrl(appProperties.getFrontendBaseUrl() + "/payment-success?orderId=" + order.getId() + "&type=order");
         response.setCancelUrl(appProperties.getFrontendBaseUrl() + "/payment/cancel?orderId=" + order.getId());
         response.setNotifyUrl(appProperties.getBackendBaseUrl() + "/api/payments/payhere/notify");
 
@@ -94,7 +95,7 @@ public class PaymentService {
             throw new RuntimeException("Rental advance payment is already completed");
         }
 
-        BigDecimal payNowAmount = booking.getAdvanceAmount().add(booking.getDeliveryCharge());
+        BigDecimal payNowAmount = booking.getAdvanceAmount();
 
         String amount = formatAmount(payNowAmount);
         String currency = payHereProperties.getCurrency();
@@ -115,7 +116,7 @@ public class PaymentService {
 
         response.setReturnUrl(
                 appProperties.getFrontendBaseUrl()
-                        + "/payment/success?type=rental&bookingId="
+                        + "/payment-success?type=rental&bookingId="
                         + booking.getId()
                         + "&booking_number="
                         + booking.getBookingNumber()
@@ -163,24 +164,40 @@ public class PaymentService {
 
         handleShopOrderPaymentNotify(request);
     }
-
     private void handleShopOrderPaymentNotify(PaymentDto.PayHereNotifyRequest request) {
         CustomerOrder order = orderRepository.findByOrderNumber(request.getOrder_id())
                 .orElseThrow(() -> new RuntimeException("Order not found"));
 
         if ("2".equals(request.getStatus_code())) {
+            // Only decrement stock if not already paid (idempotency guard)
+            if (order.getPaymentStatus() != PaymentStatus.PAID) {
+                order.getItems().forEach(item -> {
+                    productRepository.findById(item.getProductDbId()).ifPresent(product -> {
+                        int updated = Math.max(product.getAvailableUnits() - item.getQuantity(), 0);
+                        product.setAvailableUnits(updated);
+                        productRepository.save(product);
+                    });
+                });
+            }
+
             order.setPaymentStatus(PaymentStatus.PAID);
             order.setOrderStatus(OrderStatus.PROCESSING);
             order.setPaidAt(Instant.now());
             order.setPaymentGateway("PAYHERE");
             order.setPaymentMethod(request.getMethod());
-        } else if ("-2".equals(request.getStatus_code())) {
-            order.setPaymentStatus(PaymentStatus.FAILED);
-        } else if ("0".equals(request.getStatus_code())) {
-            order.setPaymentStatus(PaymentStatus.PENDING);
+
+        }  if ("2".equals(request.getStatus_code())) {
+            emailService.sendOrderInvoiceEmail(order.getUser().getEmail(), order);
         }
 
         orderRepository.save(order);
+        if ("2".equals(request.getStatus_code())) {
+            adminNotificationService.push(
+                    AdminNotification.NotificationType.NEW_ORDER,
+                    "New order paid: " + order.getOrderNumber() + " — LKR " + order.getTotalAmount()
+            );
+        }
+
     }
 
     private void handleRentalPaymentNotify(PaymentDto.PayHereNotifyRequest request) {
@@ -191,13 +208,18 @@ public class PaymentService {
             booking.setPaymentStatus(RentalPaymentStatus.ADVANCE_PAID);
             booking.setBookingStatus(RentalBookingStatus.CONFIRMED);
             booking.setAdvancePaidAt(Instant.now());
-        } else if ("-2".equals(request.getStatus_code())) {
-            booking.setPaymentStatus(RentalPaymentStatus.FAILED);
-        } else if ("0".equals(request.getStatus_code())) {
-            booking.setPaymentStatus(RentalPaymentStatus.PENDING);
+        }  if ("2".equals(request.getStatus_code())) {
+            emailService.sendRentalInvoiceEmail(booking.getUser().getEmail(), booking);
         }
 
         rentalBookingRepository.save(booking);
+        if ("2".equals(request.getStatus_code())) {
+            adminNotificationService.push(
+                    AdminNotification.NotificationType.NEW_BOOKING,
+                    "New rental booking confirmed: " + booking.getBookingNumber() + " — LKR " + booking.getAdvanceAmount()
+            );
+        }
+
     }
 
     private boolean verifyNotificationSignature(PaymentDto.PayHereNotifyRequest request) {
@@ -286,4 +308,72 @@ public class PaymentService {
 
         return (line1 + " " + line2).trim();
     }
+    @Transactional
+    public void confirmOrderPaymentFromReturn(Long orderId) {
+        CustomerOrder order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new RuntimeException("Order not found"));
+
+        // Only process if not already paid (idempotency)
+        if (order.getPaymentStatus() == PaymentStatus.PAID) {
+            return;
+        }
+
+        // Decrement stock
+        order.getItems().forEach(item ->
+                productRepository.findById(item.getProductDbId()).ifPresent(product -> {
+                    int updated = Math.max(product.getAvailableUnits() - item.getQuantity(), 0);
+                    product.setAvailableUnits(updated);
+                    productRepository.save(product);
+                })
+        );
+
+        order.setPaymentStatus(PaymentStatus.PAID);
+        order.setOrderStatus(OrderStatus.PROCESSING);
+        order.setPaidAt(Instant.now());
+        order.setPaymentGateway("PAYHERE");
+
+        orderRepository.save(order);
+
+        emailService.sendOrderInvoiceEmail(order.getUser().getEmail(), order);
+
+        adminNotificationService.push(
+                AdminNotification.NotificationType.NEW_ORDER,
+                "New Order: " + order.getOrderNumber() + " | " + order.getUser().getFirstName() + " " + order.getUser().getLastName() + " | LKR " + order.getTotalAmount()
+        );
+
+    }
+
+
+    @Transactional
+    public void confirmRentalPaymentFromReturn(Long bookingId) {
+        RentalBooking booking = rentalBookingRepository.findById(bookingId)
+                .orElseThrow(() -> new RuntimeException("Rental booking not found"));
+
+        // Only process if not already confirmed (idempotency)
+        if (booking.getPaymentStatus() == RentalPaymentStatus.ADVANCE_PAID) {
+            return;
+        }
+
+        booking.setPaymentStatus(RentalPaymentStatus.ADVANCE_PAID);
+        booking.setBookingStatus(RentalBookingStatus.CONFIRMED);
+        booking.setAdvancePaidAt(Instant.now());
+
+        rentalBookingRepository.save(booking);
+
+        // Force-load lazy collections INSIDE the transaction before passing to async email
+        booking.getItems().size();
+        booking.getUser().getEmail();
+        booking.getUser().getFirstName();
+
+        emailService.sendRentalInvoiceEmail(booking.getUser().getEmail(), booking);
+
+        adminNotificationService.push(
+                AdminNotification.NotificationType.NEW_BOOKING,
+                "New Booking: " + booking.getBookingNumber() + " | " + booking.getUser().getFirstName() + " " + booking.getUser().getLastName() + " | Advance LKR " + booking.getAdvanceAmount()
+        );
+
+    }
+
+
+
 }

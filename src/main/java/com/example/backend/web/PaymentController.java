@@ -41,4 +41,18 @@ public class PaymentController {
                 paymentService.createRentalPayHerePayment(request.getBookingId())
         );
     }
+    @PostMapping("/confirm-order/{orderId}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Void> confirmOrderPayment(@PathVariable Long orderId) {
+        paymentService.confirmOrderPaymentFromReturn(orderId);
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/confirm-rental/{bookingId}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Void> confirmRentalPayment(@PathVariable Long bookingId) {
+        paymentService.confirmRentalPaymentFromReturn(bookingId);
+        return ResponseEntity.ok().build();
+    }
+
 }

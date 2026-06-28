@@ -96,4 +96,11 @@ public class RentalBookingController {
     ) {
         return ResponseEntity.ok(rentalBookingService.completeBooking(bookingId));
     }
+
+    @PutMapping("/admin/{bookingId}/balance-collected")
+    public ResponseEntity<RentalBookingDto.RentalBookingResponse> markBalanceCollected(
+            @PathVariable Long bookingId) {
+        return ResponseEntity.ok(rentalBookingService.markBalanceCollected(bookingId));
+    }
+
 }

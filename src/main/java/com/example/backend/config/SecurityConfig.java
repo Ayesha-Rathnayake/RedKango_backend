@@ -2,6 +2,7 @@ package com.example.backend.config;
 
 import com.example.backend.security.CustomUserDetailsService;
 import com.example.backend.security.JwtAuthenticationFilter;
+import com.example.backend.security.SseTokenFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -21,15 +22,21 @@ import org.springframework.web.cors.CorsConfigurationSource;
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtFilter;
+    private final SseTokenFilter sseTokenFilter;
+
     private final CustomUserDetailsService userDetailsService;
     private final CorsConfigurationSource corsConfigurationSource;
 
     public SecurityConfig(
             JwtAuthenticationFilter jwtFilter,
+            SseTokenFilter sseTokenFilter,
+
             CustomUserDetailsService uds,
             CorsConfigurationSource corsConfigurationSource
     ) {
         this.jwtFilter = jwtFilter;
+        this.sseTokenFilter = sseTokenFilter;
+
         this.userDetailsService = uds;
         this.corsConfigurationSource = corsConfigurationSource;
     }
@@ -53,7 +60,8 @@ public class SecurityConfig {
                                 "/api/auth/refresh",
                                 "/api/auth/logout",
                                 "/api/auth/resend-verification",
-                                "/api/rental/payment/notify"
+                                "/api/rental/payment/notify",
+                                "/api/payments/payhere/notify"
                         ).permitAll()
 
                         .requestMatchers(HttpMethod.GET,
@@ -69,8 +77,10 @@ public class SecurityConfig {
                                 "/api/terms/active",
                                 "/api/products",
                                 "/api/products/*",
-                                "/uploads/**"
-                        ).permitAll()
+                                "/uploads/**",
+                                "/api/site-settings"
+
+                                ).permitAll()
 
                         .requestMatchers(HttpMethod.POST, "/api/reviews")
                         .hasAnyRole("CUSTOMER", "ADMIN")
@@ -96,6 +106,7 @@ public class SecurityConfig {
                         .anyRequest().authenticated()
                 )
                 .authenticationProvider(daoAuthProvider())
+                .addFilterBefore(sseTokenFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();

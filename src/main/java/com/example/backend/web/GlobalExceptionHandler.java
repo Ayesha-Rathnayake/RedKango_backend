@@ -86,19 +86,6 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new ApiMessage(msg));
     }
 
-    /**
-     * Spring @Valid / @Validated field-level errors.
-     * Returns:
-     * {
-     *   "message": "Validation failed",
-     *   "errors": {
-     *     "email":    "Invalid email format",
-     *     "password": "Password does not meet complexity requirements",
-     *     ...
-     *   }
-     * }
-     * Frontend reads body.errors and maps each key to its field.
-     */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException ex) {
         Map<String, String> fieldErrors = new HashMap<>();
@@ -134,13 +121,11 @@ public class GlobalExceptionHandler {
                     .body(new ApiMessage("Invalid email or password"));
         }
         if (ex instanceof DisabledException) {
-            // Must match the string checked in login.component.ts:
-            //   if (msg === 'Account not verified') { ... }
+
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(new ApiMessage("Account not verified"));
         }
         if (ex instanceof LockedException) {
-            // Must match:  if (msg === 'Account locked') { ... }
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(new ApiMessage("Account locked"));
         }
@@ -153,6 +138,15 @@ public class GlobalExceptionHandler {
             org.springframework.security.access.AccessDeniedException ex) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(new ApiMessage("Forbidden"));
     }
+
+    // ── Business logic errors (RuntimeException from services) ────────────────
+
+    @ExceptionHandler(RuntimeException.class)
+    public ResponseEntity<ApiMessage> handleRuntime(RuntimeException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(new ApiMessage(ex.getMessage()));
+    }
+
 
     // ── Catch-all ─────────────────────────────────────────────────────────────
 
